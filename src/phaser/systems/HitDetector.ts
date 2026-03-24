@@ -8,6 +8,7 @@ import type { TimingGrade, TimingPreset } from '../../core/types'
 export interface GradeResult {
   grade: TimingGrade;
   isEarly: boolean;
+  isLate: boolean;     // true when: hard mode, hit is late AND delta >= windowMs * TIMING.GOOD
   accuracyMs: number;  // signed: negative=early, positive=late, 0=perfect
 }
 
@@ -33,7 +34,7 @@ export class HitDetector {
     pitchMatches: boolean,
   ): GradeResult {
     if (!pitchMatches) {
-      return { grade: 'Wrong', isEarly: false, accuracyMs: 0 };
+      return { grade: 'Wrong', isEarly: false, isLate: false, accuracyMs: 0 };
     }
 
     const delta = inputTimeMs - noteTimeMs;  // negative=early, positive=late
@@ -43,7 +44,9 @@ export class HitDetector {
     // Main timing window (strict less-than so boundary is Miss)
     if (absDelta < windowMs) {
       const grade = this.gradeByPosition(absDelta, windowMs);
-      return { grade, isEarly: false, accuracyMs: delta };
+      // isLate: hard mode only, hit is late AND at/past the 75% (GOOD) threshold
+      const isLate = preset === 'hard' && delta > 0 && delta >= windowMs * TIMING.GOOD;
+      return { grade, isEarly: false, isLate, accuracyMs: delta };
     }
 
     // Early zone: (windowMs, 2*windowMs] — strictly after the main window
@@ -51,19 +54,19 @@ export class HitDetector {
     if (isEarlyInput && absDelta > windowMs && absDelta <= windowMs * 2) {
       if (preset === 'beginner') {
         // Beginner ignores early zone — no credit, no early flag
-        return { grade: 'Miss', isEarly: false, accuracyMs: delta };
+        return { grade: 'Miss', isEarly: false, isLate: false, accuracyMs: delta };
       }
       if (preset === 'hard') {
         // Hard mode: early hit still misses, but flag it so streak breaks
-        return { grade: 'Miss', isEarly: true, accuracyMs: delta };
+        return { grade: 'Miss', isEarly: true, isLate: false, accuracyMs: delta };
       }
       // Standard mode: credit the hit with early flag (penalty applied by Scorer)
       const grade = this.gradeByPosition(absDelta, windowMs);
-      return { grade, isEarly: true, accuracyMs: delta };
+      return { grade, isEarly: true, isLate: false, accuracyMs: delta };
     }
 
     // Outside all windows — clean Miss
-    return { grade: 'Miss', isEarly: false, accuracyMs: delta };
+    return { grade: 'Miss', isEarly: false, isLate: false, accuracyMs: delta };
   }
 
   /**

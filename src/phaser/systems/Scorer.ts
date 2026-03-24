@@ -8,21 +8,29 @@ import type { TimingGrade, SongGrade, GameMode } from '../../core/types'
 export class Scorer {
   /**
    * Calculate points for a single note hit.
-   * @param grade      - The timing grade (Perfect/Good/OK/Miss/Wrong)
+   * @param grade            - The timing grade (Perfect/Good/OK/Miss/Wrong)
    * @param streakMultiplier - Current streak multiplier (1x, 2x, 3x, 4x)
-   * @param isEarly    - Whether this was an early hit (applies penalty)
-   * @param _mode      - GameMode (reserved for future hard-mode late penalty)
+   * @param isEarly          - Whether this was an early hit (standard mode only: 25% penalty)
+   * @param isLate           - Whether this was a late hit past 75% window (hard mode only)
+   * @param mode             - GameMode
    */
   calculatePoints(
     grade: TimingGrade,
     streakMultiplier: number,
     isEarly: boolean,
-    _mode: GameMode,
+    isLate: boolean,
+    mode: GameMode,
   ): number {
     if (grade === 'Miss' || grade === 'Wrong') return 0;
 
+    // Hard mode late penalty: flat Base×0.5 formula (no grade multiplier, PRD §5.1)
+    if (mode === 'hard' && isLate) {
+      return Math.round(SCORING.BASE_POINTS * 0.5 * streakMultiplier);
+    }
+
     const gradeMultiplier = SCORING.GRADE_MULTIPLIERS[grade];
-    const earlyPenalty = isEarly ? TIMING.EARLY_PENALTY_MULTIPLIER : 1.0;
+    // Early penalty is standard-mode only (hard mode doesn't grant late-early credit)
+    const earlyPenalty = (mode === 'standard' && isEarly) ? TIMING.EARLY_PENALTY_MULTIPLIER : 1.0;
 
     return Math.round(
       SCORING.BASE_POINTS * gradeMultiplier * streakMultiplier * earlyPenalty,
@@ -45,13 +53,26 @@ export class Scorer {
 
   /**
    * Calculate XP earned for a completed song.
-   * @param grade  - Song grade (S/A/B/C/D)
-   * @param _mode  - GameMode (reserved for practice speed bonuses)
-   * @param _speed - Playback speed (reserved for practice speed bonuses)
+   * @param grade - Song grade (S/A/B/C/D)
+   * @param mode  - GameMode (practice mode applies speed bonuses, PRD §5.5)
+   * @param speed - Playback speed (>1.25 → ×1.5, >1.0 → ×1.25, else no bonus)
    */
-  calculateXP(grade: SongGrade, _mode: GameMode, _speed: number): number {
+  calculateXP(grade: SongGrade, mode: GameMode, speed: number): number {
     const base = XP.BASE_XP;
     const bonus = XP.GRADE_BONUS[grade];
-    return Math.max(0, base + bonus);
+    let total = Math.max(0, base + bonus);
+
+    // Practice mode only: apply speed bonus
+    if (mode === 'practice') {
+      if (speed > XP.SPEED_BONUS_THRESHOLDS.HIGH) {        // > 1.25
+        total = Math.round(total * 1.5);
+      } else if (speed > XP.SPEED_BONUS_THRESHOLDS.MEDIUM) { // > 1.0
+        total = Math.round(total * 1.25);
+      }
+      // speed <= 1.0: no bonus
+    }
+    // Performance mode: no speed bonus regardless of speed
+
+    return Math.max(0, total);  // floor guarantee after multiplication
   }
 }

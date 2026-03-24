@@ -45,6 +45,7 @@ const RESETTABLE_FIELDS: ReadonlyArray<keyof GameStateData> = [
   'maxStreak',
   'notesHit',
   'notesMissed',
+  'notesTotal',   // PRD §: reset between songs
   'isPlaying',
   'isPaused',
   'loopStart',

@@ -188,6 +188,48 @@ describe('HitDetector', () => {
     })
   })
 
+  // ─── isLate flag (hard-mode late penalty detection) ──────────────────────────
+
+  describe('isLate flag', () => {
+    // Hard window = 150ms, late threshold = 150 * 0.75 = 112.5ms
+    // isLate = true when: delta > 0 AND delta >= windowMs * TIMING.GOOD (0.75)
+
+    it('hard mode, 113ms late → isLate=true, grade=OK', () => {
+      // absDelta=113, window=150: inside window (113 < 150)
+      // delta=113 >= 150*0.75=112.5 → isLate=true
+      const r = hd.gradeHit(NOTE_TIME + 113, NOTE_TIME, 150, 'hard', true)
+      expect(r.isLate).toBe(true)
+      expect(r.grade).toBe('OK')
+    })
+
+    it('hard mode, 112ms late → isLate=false, grade=Good (just inside boundary)', () => {
+      // delta=112 < 150*0.75=112.5 → isLate=false; 112 < 112.5 falls in Good zone
+      const r = hd.gradeHit(NOTE_TIME + 112, NOTE_TIME, 150, 'hard', true)
+      expect(r.isLate).toBe(false)
+      expect(r.grade).toBe('Good')
+    })
+
+    it('standard mode, 225ms late → isLate=false (late flag not set for standard)', () => {
+      // delta=225 >= 300*0.75=225 — within window, past 75%
+      // but isLate only applies to hard mode detection
+      const r = hd.gradeHit(NOTE_TIME + 225, NOTE_TIME, 300, 'standard', true)
+      expect(r.isLate).toBe(false)
+      expect(r.grade).toBe('OK')
+    })
+
+    it('hard mode, 37ms late (inside Perfect zone) → isLate=false', () => {
+      // delta=37 < 150*0.75=112.5 → isLate=false
+      const r = hd.gradeHit(NOTE_TIME + 37, NOTE_TIME, 150, 'hard', true)
+      expect(r.isLate).toBe(false)
+      expect(r.grade).toBe('Perfect')
+    })
+
+    it('GradeResult shape includes isLate property', () => {
+      const r = hd.gradeHit(NOTE_TIME, NOTE_TIME, 300, 'standard', true)
+      expect(r).toHaveProperty('isLate')
+    })
+  })
+
   // ─── Edge cases ───────────────────────────────────────────────────────────────
 
   describe('edge cases', () => {

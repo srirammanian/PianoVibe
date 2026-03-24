@@ -12,65 +12,90 @@ describe('Scorer', () => {
 
   describe('calculatePoints', () => {
     it('Perfect + streak 1x = 100 points', () => {
-      expect(scorer.calculatePoints('Perfect', 1, false, 'performance')).toBe(100)
+      expect(scorer.calculatePoints('Perfect', 1, false, false, 'performance')).toBe(100)
     })
 
     it('Good + streak 1x = 75 points', () => {
-      expect(scorer.calculatePoints('Good', 1, false, 'performance')).toBe(75)
+      expect(scorer.calculatePoints('Good', 1, false, false, 'performance')).toBe(75)
     })
 
     it('OK + streak 1x = 50 points', () => {
-      expect(scorer.calculatePoints('OK', 1, false, 'performance')).toBe(50)
+      expect(scorer.calculatePoints('OK', 1, false, false, 'performance')).toBe(50)
     })
 
     it('Perfect + streak 2x = 200 points', () => {
-      expect(scorer.calculatePoints('Perfect', 2, false, 'performance')).toBe(200)
+      expect(scorer.calculatePoints('Perfect', 2, false, false, 'performance')).toBe(200)
     })
 
     it('Perfect + streak 3x = 300 points', () => {
-      expect(scorer.calculatePoints('Perfect', 3, false, 'performance')).toBe(300)
+      expect(scorer.calculatePoints('Perfect', 3, false, false, 'performance')).toBe(300)
     })
 
     it('Perfect + streak 4x = 400 points', () => {
-      expect(scorer.calculatePoints('Perfect', 4, false, 'performance')).toBe(400)
+      expect(scorer.calculatePoints('Perfect', 4, false, false, 'performance')).toBe(400)
     })
 
     it('Good + streak 2x = 150 points', () => {
-      expect(scorer.calculatePoints('Good', 2, false, 'performance')).toBe(150)
+      expect(scorer.calculatePoints('Good', 2, false, false, 'performance')).toBe(150)
     })
 
     it('OK + streak 4x = 200 points', () => {
-      expect(scorer.calculatePoints('OK', 4, false, 'performance')).toBe(200)
+      expect(scorer.calculatePoints('OK', 4, false, false, 'performance')).toBe(200)
     })
 
-    it('Perfect + early penalty = 75 points (100 × 1.0 × 1 × 0.75)', () => {
-      expect(scorer.calculatePoints('Perfect', 1, true, 'performance')).toBe(75)
+    // Early penalty is standard-mode only
+    it('Perfect + early penalty (standard mode) = 75 points (100 × 1.0 × 1 × 0.75)', () => {
+      expect(scorer.calculatePoints('Perfect', 1, true, false, 'standard')).toBe(75)
     })
 
-    it('Good + early penalty = 56 points (Math.round(100 × 0.75 × 1 × 0.75))', () => {
+    it('Good + early penalty (standard mode) = 56 points (Math.round(100 × 0.75 × 1 × 0.75))', () => {
       // 100 × 0.75 × 1 × 0.75 = 56.25 → Math.round = 56
-      expect(scorer.calculatePoints('Good', 1, true, 'performance')).toBe(56)
+      expect(scorer.calculatePoints('Good', 1, true, false, 'standard')).toBe(56)
     })
 
-    it('OK + early penalty = 38 points (Math.round(100 × 0.5 × 1 × 0.75))', () => {
+    it('OK + early penalty (standard mode) = 38 points (Math.round(100 × 0.5 × 1 × 0.75))', () => {
       // 100 × 0.5 × 1 × 0.75 = 37.5 → Math.round = 38
-      expect(scorer.calculatePoints('OK', 1, true, 'performance')).toBe(38)
+      expect(scorer.calculatePoints('OK', 1, true, false, 'standard')).toBe(38)
+    })
+
+    it('Perfect + isEarly + performance mode = 100 points (early penalty is standard-only)', () => {
+      expect(scorer.calculatePoints('Perfect', 1, true, false, 'performance')).toBe(100)
     })
 
     it('Miss = 0 points', () => {
-      expect(scorer.calculatePoints('Miss', 1, false, 'performance')).toBe(0)
+      expect(scorer.calculatePoints('Miss', 1, false, false, 'performance')).toBe(0)
     })
 
     it('Wrong = 0 points', () => {
-      expect(scorer.calculatePoints('Wrong', 1, false, 'performance')).toBe(0)
+      expect(scorer.calculatePoints('Wrong', 1, false, false, 'performance')).toBe(0)
     })
 
     it('Miss with any streak still = 0', () => {
-      expect(scorer.calculatePoints('Miss', 4, false, 'performance')).toBe(0)
+      expect(scorer.calculatePoints('Miss', 4, false, false, 'performance')).toBe(0)
     })
 
     it('Wrong with early flag still = 0', () => {
-      expect(scorer.calculatePoints('Wrong', 4, true, 'performance')).toBe(0)
+      expect(scorer.calculatePoints('Wrong', 4, true, false, 'performance')).toBe(0)
+    })
+
+    // ─── Hard mode late penalty ──────────────────────────────────────────────
+    // PRD §5.1: hard + late → Final Points = Base × 0.5 × streakMultiplier
+
+    it('hard + OK + isLate + streak 1x → 50 pts (100 × 0.5 × 1)', () => {
+      expect(scorer.calculatePoints('OK', 1, false, true, 'hard')).toBe(50)
+    })
+
+    it('hard + OK + isLate + streak 2x → 100 pts (100 × 0.5 × 2)', () => {
+      expect(scorer.calculatePoints('OK', 2, false, true, 'hard')).toBe(100)
+    })
+
+    it('hard + Perfect + NOT late → 100 pts (normal formula)', () => {
+      expect(scorer.calculatePoints('Perfect', 1, false, false, 'hard')).toBe(100)
+    })
+
+    it('standard + isLate=true → late penalty NOT applied (standard mode ignores isLate)', () => {
+      // OK with standard mode + isLate flag → normal formula: 100 × 0.5 × 1 = 50
+      expect(scorer.calculatePoints('OK', 1, false, true, 'standard')).toBe(50)
     })
   })
 
@@ -144,6 +169,31 @@ describe('Scorer', () => {
     it('calculateXP never returns negative', () => {
       // Even if bonus were to exceed base, result floors at 0
       expect(scorer.calculateXP('D', 'performance', 1.0)).toBeGreaterThanOrEqual(0)
+    })
+
+    // ─── Speed bonus (practice mode only, PRD §5.5) ──────────────────────────
+    // > 1.25 speed → ×1.5 XP; > 1.0 speed → ×1.25 XP; else no bonus
+
+    it('practice + speed=1.3 + grade S → Math.round(150 × 1.5) = 225', () => {
+      expect(scorer.calculateXP('S', 'practice', 1.3)).toBe(225)
+    })
+
+    it('practice + speed=1.1 + grade S → Math.round(150 × 1.25) = 188', () => {
+      expect(scorer.calculateXP('S', 'practice', 1.1)).toBe(188)
+    })
+
+    it('practice + speed=1.0 + grade S → 150 (no bonus, exactly at boundary)', () => {
+      expect(scorer.calculateXP('S', 'practice', 1.0)).toBe(150)
+    })
+
+    it('practice + speed=1.25 + grade S → 188 (medium bonus: 1.25 > 1.0, not > 1.25 for high)', () => {
+      // 1.25 > MEDIUM(1.0) → ×1.25 bonus. Not > HIGH(1.25) → no ×1.5.
+      // Math.round(150 × 1.25) = 188
+      expect(scorer.calculateXP('S', 'practice', 1.25)).toBe(188)
+    })
+
+    it('performance + speed=1.5 + grade S → 150 (no bonus in performance mode)', () => {
+      expect(scorer.calculateXP('S', 'performance', 1.5)).toBe(150)
     })
   })
 })

@@ -23,6 +23,7 @@ export class NoteScheduler {
    * targetMs  = noteTimeMs
    */
   buildSchedule(notes: GameReadyNote[], speed: number): void {
+    if (speed <= 0) throw new RangeError(`speed must be > 0, got ${speed}`);
     const fallDurationMs = NOTE.FALL_DURATION_SEC * 1000;
     const adjustedFallMs = fallDurationMs / speed;
 

@@ -74,6 +74,14 @@ describe('NoteScheduler', () => {
     expect(sched.getSchedule()).toHaveLength(0)
   })
 
+  it('buildSchedule with speed=0 throws RangeError', () => {
+    expect(() => sched.buildSchedule([makeNote('n1', 2.5)], 0)).toThrow(RangeError)
+  })
+
+  it('buildSchedule with speed=-1 throws RangeError', () => {
+    expect(() => sched.buildSchedule([makeNote('n1', 2.5)], -1)).toThrow(RangeError)
+  })
+
   // ─── getNotesToSpawn ────────────────────────────────────────────────────────
 
   it('getNotesToSpawn(0): returns notes with spawnAtMs <= 0', () => {

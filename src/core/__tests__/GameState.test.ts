@@ -119,6 +119,13 @@ describe('GameState', () => {
     expect(gs2.get('score')).toBe(0)
   })
 
+  it('reset() clears notesTotal to 0', () => {
+    const gs = new GameState()
+    gs.set('notesTotal', 100)
+    gs.reset()
+    expect(gs.get('notesTotal')).toBe(0)
+  })
+
   it('set multiple fields then reset — only resettable fields clear', () => {
     const gs = new GameState()
     gs.set('score', 300)
