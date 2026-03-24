@@ -71,8 +71,9 @@ export class GameState {
 
   reset(): void {
     for (const field of RESETTABLE_FIELDS) {
-      // Type-safe reset: cast through unknown to satisfy TypeScript
-      (this.data as Record<string, unknown>)[field] = DEFAULTS[field];
+      // Cast through unknown first to bypass index-signature requirement
+      (this.data as unknown as Record<string, unknown>)[field] =
+        (DEFAULTS as unknown as Record<string, unknown>)[field];
     }
   }
 }
