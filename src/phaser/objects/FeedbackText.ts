@@ -36,8 +36,8 @@ export class FeedbackText {
       tweens: [
         // 1. Scale 0.5 → 1.2 over 100ms
         { scaleX: 1.2, scaleY: 1.2, duration: 100, ease: 'Power2Out' },
-        // 2. Hold at 1.2 for 50ms
-        { duration: 50 },
+        // 2. Hold at 1.2 for 50ms (explicit identity tween so Phaser actually holds the scale)
+        { scaleX: 1.2, scaleY: 1.2, duration: 50 },
         // 3. Scale 1.2 → 1.0 while floating up 30px over 200ms
         { scaleX: 1.0, scaleY: 1.0, y: y - 30, duration: 200, ease: 'Power2Out' },
         // 4. Fade to 0 over 100ms

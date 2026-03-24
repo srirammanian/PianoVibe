@@ -34,6 +34,12 @@ describe('ABLoopController', () => {
     expect(ab.getLoopStart()).toBe(2);
   });
 
+  it('markA() with negative time clamps loopStart to 0', () => {
+    ab.markA(-1);
+    expect(ab.getLoopStart()).toBe(0);
+    expect(ab.getState()).toBe('A_MARKED');
+  });
+
   it('markA() clears a previously set loopEnd', () => {
     ab.markA(1);
     ab.markB(3);

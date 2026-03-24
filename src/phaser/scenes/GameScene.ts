@@ -43,10 +43,14 @@ export class GameScene extends Phaser.Scene {
   // Song data
   private songData: GameReadyNote[] = [];
 
+  // Timestamp reference frame: wall-clock ms at game start (performance.now())
+  private songStartWallTime = 0;
+
   // Bound EventBus handlers for cleanup
   private boundNotePlayed: ((data: unknown) => void) | null = null;
   private boundPause: (() => void) | null = null;
   private boundResume: (() => void) | null = null;
+  private boundGameEnd: (() => void) | null = null;
 
   constructor() {
     super({ key: 'Game' });
@@ -71,7 +75,7 @@ export class GameScene extends Phaser.Scene {
 
     // Calculate song end time: last note end + fall duration buffer
     if (data.songData && data.songData.length > 0) {
-      const lastNoteTime = Math.max(...data.songData.map(n => n.time + n.duration));
+      const lastNoteTime = data.songData.reduce((max, n) => Math.max(max, n.time + n.duration), 0);
       this.songEndTimeMs = (lastNoteTime + 2.5) * 1000; // +2.5 s fall buffer
     } else {
       this.songEndTimeMs = 0;
@@ -130,26 +134,33 @@ export class GameScene extends Phaser.Scene {
     this.boundNotePlayed = (data: unknown) => this.handleNotePlayed(data as InputEvent);
     this.boundPause = () => this.handlePause();
     this.boundResume = () => this.handleResume();
+    this.boundGameEnd = () => this.handleGameEnd();
 
     eventBus.on(Events.NOTE_PLAYED, this.boundNotePlayed);
     eventBus.on(Events.GAME_PAUSE, this.boundPause);
     eventBus.on(Events.GAME_RESUME, this.boundResume);
+    eventBus.on(Events.GAME_END, this.boundGameEnd);
 
     gameState.set('isPlaying', true);
     gameState.set('phase', 'GAMEPLAY');
+
+    // Record wall-clock start time for timestamp reference-frame conversion (PRD 2)
+    this.songStartWallTime = performance.now();
   }
 
   update(_time: number, delta: number): void {
-    if (!gameState.get('isPlaying') || gameState.get('isPaused')) return;
-
-    // ── Escape — toggle pause ─────────────────────────────────────────────
+    // ── Escape — toggle pause (MUST be above the isPaused guard) ─────────
+    // When paused, the guard below returns early; ESC must fire first to allow resume.
     if (this.escKey && Phaser.Input.Keyboard.JustDown(this.escKey)) {
       if (gameState.get('isPaused')) {
         eventBus.emit(Events.GAME_RESUME, {});
-      } else {
+      } else if (gameState.get('isPlaying')) {
         eventBus.emit(Events.GAME_PAUSE, {});
       }
     }
+
+    // Only advance game clock / notes when actively playing and not paused
+    if (!gameState.get('isPlaying') || gameState.get('isPaused')) return;
 
     const speed = gameState.get('speed');
     const adjustedDelta = delta * speed;
@@ -204,6 +215,18 @@ export class GameScene extends Phaser.Scene {
 
     const windowMs = gameState.get('timingWindowMs');
     const preset = gameState.get('timingPreset');
+    const speed = gameState.get('speed');
+
+    /**
+     * Timestamp reference-frame conversion:
+     * inputEvent.timestamp MUST be in performance.now() wall-clock ms (PRD 2 contract).
+     * gameClock runs in gameClock-space: accumulated delta * speed, starting from 0.
+     * We convert wall-clock → gameClock-space so both sides use the same frame.
+     *
+     * PRD 2 input system must emit NOTE_PLAYED with timestamp = performance.now()
+     * at the moment of key/MIDI detection.
+     */
+    const inputGameClockMs = (inputEvent.timestamp - this.songStartWallTime) * speed;
 
     // Find the closest matching note by MIDI note number
     const activeNotes = this.noteSpawner.getActiveNotes();
@@ -213,7 +236,7 @@ export class GameScene extends Phaser.Scene {
     for (const note of activeNotes) {
       if (note.noteData.midiNote !== inputEvent.midiNote) continue;
       const noteTargetMs = note.noteData.time * 1000;
-      const delta = Math.abs(inputEvent.timestamp - noteTargetMs);
+      const delta = Math.abs(inputGameClockMs - noteTargetMs);
       if (delta < closestDelta) {
         closestDelta = delta;
         closestNote = note;
@@ -233,7 +256,7 @@ export class GameScene extends Phaser.Scene {
 
     const noteTargetMs = closestNote.noteData.time * 1000;
     const result = this.hitDetector.gradeHit(
-      inputEvent.timestamp,
+      inputGameClockMs,
       noteTargetMs,
       windowMs,
       preset,
@@ -300,7 +323,18 @@ export class GameScene extends Phaser.Scene {
     gameState.set('streak', 0);
     gameState.set('notesMissed', gameState.get('notesMissed') + 1);
     eventBus.emit(Events.NOTE_MISSED, { noteId, grade: 'Miss' });
+
+    // Show miss feedback at centre stage
+    const feedbackX = this.scale.width / 2;
+    const feedbackY = this.scale.height * 0.4;
+    FeedbackText.show(this, feedbackX, feedbackY, 'Miss');
+
     this.updateScoreDisplay();
+  }
+
+  private handleGameEnd(): void {
+    // Navigate back to Boot scene (re-runs create(), re-registers GAME_START listener)
+    this.scene.start('Boot');
   }
 
   private handlePause(): void {
@@ -322,6 +356,12 @@ export class GameScene extends Phaser.Scene {
     if (this.boundNotePlayed) eventBus.off(Events.NOTE_PLAYED, this.boundNotePlayed);
     if (this.boundPause) eventBus.off(Events.GAME_PAUSE, this.boundPause);
     if (this.boundResume) eventBus.off(Events.GAME_RESUME, this.boundResume);
+    if (this.boundGameEnd) eventBus.off(Events.GAME_END, this.boundGameEnd);
+
+    // Remove keyboard keys from Phaser's input manager
+    if (this.escKey) this.input.keyboard?.removeKey(this.escKey);
+    if (this.aKey) this.input.keyboard?.removeKey(this.aKey);
+    if (this.bKey) this.input.keyboard?.removeKey(this.bKey);
 
     // Destroy systems
     this.noteSpawner?.destroy();
@@ -343,6 +383,10 @@ export class GameScene extends Phaser.Scene {
     // abLoop is a pure class — no destroy needed
     this.abLoop = null;
 
+    this.escKey = null;
+    this.aKey = null;
+    this.bKey = null;
+    this.boundGameEnd = null;
     this.scoreText = null;
     gameState.set('isPlaying', false);
   }

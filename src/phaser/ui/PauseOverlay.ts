@@ -56,7 +56,7 @@ export class PauseOverlay {
     quitBtn.on('pointerout', () => quitBtn.setAlpha(1));
 
     this.container = scene.add.container(0, 0, [bg, title, resumeBtn, quitBtn]);
-    this.container.setDepth(50);
+    this.container.setDepth(110); // Above FeedbackText (depth 100)
     this.container.setVisible(false);
   }
 

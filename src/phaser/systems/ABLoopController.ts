@@ -12,9 +12,9 @@ export class ABLoopController {
   private loopStart: number | null = null;
   private loopEnd: number | null = null;
 
-  /** Mark the loop start point at the given song position (seconds). */
+  /** Mark the loop start point at the given song position (seconds). Clamped to >= 0. */
   markA(currentTimeSec: number): void {
-    this.loopStart = currentTimeSec;
+    this.loopStart = Math.max(0, currentTimeSec);
     this.loopEnd = null;
     this.state = 'A_MARKED';
   }
