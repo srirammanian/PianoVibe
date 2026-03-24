@@ -2,6 +2,15 @@
 // Captures microphone audio and performs real-time pitch detection using pitchy.
 // Emits normalised noteOn events via InputBridge when a piano note is detected.
 //
+// Key improvements over naive pitch detection:
+// 1. Frequency smoothing — rolling average over N frames to reduce jitter
+// 2. Confirmation buffer — a note must be detected N consecutive frames
+//    before we commit to it (prevents overtones triggering wrong notes)
+// 3. Hysteresis — require clarity to stay below threshold for N frames
+//    before releasing (prevents dropouts mid-note)
+// 4. RMS noise gate — ignore detections where RMS amplitude is too low
+// 5. Per-note debounce — prevent rapid re-fires of the same note
+//
 // Usage:
 //   import { initMic, destroyMic } from './MicInput';
 //   await initMic();   // Requests mic permission + starts detection loop
@@ -10,7 +19,15 @@
 import { AUDIO } from '../core/Constants';
 import { emitNoteOn, emitNoteOff } from './InputBridge';
 
-// ─── Note name lookup ─────────────────────────────────────────────────────────
+// ─── Tuning constants ────────────────────────────────────────────────────────
+const DETECTION_FRAMES = 4;     // Consecutive frames needed to confirm a note
+const RELEASE_FRAMES = 3;        // Consecutive frames below threshold to release
+const FREQ_SMOOTH_FRAMES = 5;   // Frames for rolling average frequency
+const MIN_RMS = 0.005;          // Minimum RMS amplitude to register a note
+const RMS_VELOCITY_SCALE = 300; // Scale RMS to 0-127 velocity range
+const INTER_NOTE_DEBOUNCE_MS = 80; // Minimum ms between different notes
+
+// ─── Note name lookup ───────────────────────────────────────────────────────
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 
 export function midiToPitch(midi: number): string {
@@ -28,22 +45,23 @@ let audioContext: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
 let mediaStream: MediaStream | null = null;
 let animationFrameId: number | null = null;
-
-// Pitchy PitchDetector instance (class-based API)
-// Type is erased here so the module can tree-shake in non-mic builds.
 let pitchDetector: { findPitch: (input: Float32Array, sampleRate: number) => [number, number] } | null = null;
 
-// Debounce: track last emission time per MIDI note to avoid rapid re-fires
-const lastNoteTime = new Map<number, number>();
+// ─── Detection smoothing state ─────────────────────────────────────────────────
+let freqHistory: number[] = [];         // Rolling average of frequency
+let clarityHistory: number[] = [];      // Rolling average of clarity
+let rmsHistory: number[] = [];          // Rolling average of RMS amplitude
 
-// Track currently active mic notes so we can emit noteOff
-let currentMidiNote: number | null = null;
+let confirmedMidiNote: number | null = null;   // Note we've confirmed holding
+let confirmCount = 0;                          // Frames at current note
+let releaseCount = 0;                          // Frames below threshold
+let lastEmittedMidiNote: number | null = null; // For debounce
+let lastEmittedTime = 0;                       // For debounce
 
 // ─── Initialisation ───────────────────────────────────────────────────────────
 export async function initMic(): Promise<void> {
-  if (audioContext) return; // Already running
+  if (audioContext) return;
 
-  // Request mic access with raw audio (no processing that distorts pitch)
   mediaStream = await navigator.mediaDevices.getUserMedia({
     audio: {
       echoCancellation: false,
@@ -61,56 +79,149 @@ export async function initMic(): Promise<void> {
   analyser.smoothingTimeConstant = 0; // We want instantaneous frames
   source.connect(analyser);
 
-  // Dynamic import keeps pitchy out of the main bundle until mic is actually used.
-  // Pitchy v4+ exposes PitchDetector (class-based) not a findPitch function.
   const { PitchDetector } = await import('pitchy');
   pitchDetector = PitchDetector.forFloat32Array(cfg.BUFFER_SIZE);
+
+  // Reset smoothing state
+  freqHistory = [];
+  clarityHistory = [];
+  rmsHistory = [];
+  confirmedMidiNote = null;
+  confirmCount = 0;
+  releaseCount = 0;
+  lastEmittedMidiNote = null;
+  lastEmittedTime = 0;
 
   startDetectionLoop();
 }
 
-// ─── Detection loop ───────────────────────────────────────────────────────────
+// ─── Rolling average helper ─────────────────────────────────────────────────────
+function pushAndAverage(arr: number[], value: number, maxLen: number): number {
+  arr.push(value);
+  if (arr.length > maxLen) arr.shift();
+  return arr.reduce((a, b) => a + b, 0) / arr.length;
+}
+
+// ─── Detection loop ────────────────────────────────────────────────────────────
 function startDetectionLoop(): void {
   const cfg = AUDIO.PITCHY;
   const buffer = new Float32Array(cfg.BUFFER_SIZE);
 
   const detect = (): void => {
-    if (!analyser || !pitchDetector) return;
+    if (!analyser || !pitchDetector) {
+      animationFrameId = requestAnimationFrame(detect);
+      return;
+    }
 
     analyser.getFloatTimeDomainData(buffer);
-    const [frequency, clarity] = pitchDetector!.findPitch(buffer, cfg.SAMPLE_RATE);
+    const [rawFrequency, rawClarity] = pitchDetector!.findPitch(buffer, cfg.SAMPLE_RATE);
+    const rms = computeRms(buffer);
+
+    // Update rolling averages
+    const avgClarity = pushAndAverage(clarityHistory, rawClarity, DETECTION_FRAMES);
+    const avgRms = pushAndAverage(rmsHistory, rms, DETECTION_FRAMES);
 
     const now = performance.now();
 
-    if (
-      clarity >= cfg.MIN_CONFIDENCE &&
-      frequency >= cfg.MIN_FREQUENCY &&
-      frequency <= cfg.MAX_FREQUENCY
-    ) {
-      const midiNote = frequencyToMidi(frequency);
-      const lastTime = lastNoteTime.get(midiNote) ?? 0;
+    // ── Noise gate: ignore if amplitude too low ────────────────────────────────
+    if (avgRms < MIN_RMS) {
+      // Silence — release any held note
+      if (confirmedMidiNote !== null) {
+        emitNoteOff(midiToPitch(confirmedMidiNote), confirmedMidiNote, 'mic');
+        confirmedMidiNote = null;
+        confirmCount = 0;
+        releaseCount = 0;
+      }
+      animationFrameId = requestAnimationFrame(detect);
+      return;
+    }
 
-      if (now - lastTime >= cfg.DEBOUNCE_MS) {
-        // Emit noteOff for any previously active different note
-        if (currentMidiNote !== null && currentMidiNote !== midiNote) {
-          emitNoteOff(midiToPitch(currentMidiNote), currentMidiNote, 'mic');
+    // ── Confidence gate ────────────────────────────────────────────────────
+    if (avgClarity < cfg.MIN_CONFIDENCE) {
+      // Low clarity — this could be silence or noise
+      if (confirmedMidiNote !== null) {
+        releaseCount++;
+        if (releaseCount >= RELEASE_FRAMES) {
+          // Been unclear for several frames — release the note
+          emitNoteOff(midiToPitch(confirmedMidiNote), confirmedMidiNote, 'mic');
+          confirmedMidiNote = null;
+          confirmCount = 0;
+          releaseCount = 0;
         }
-
-        lastNoteTime.set(midiNote, now);
-        currentMidiNote = midiNote;
-
-        // Velocity is approximated from RMS amplitude of the buffer
-        const rms = computeRms(buffer);
-        const velocity = Math.min(127, Math.round(rms * 1000));
-
-        emitNoteOn(midiToPitch(midiNote), midiNote, velocity || 100, 'mic', clarity);
       }
+      animationFrameId = requestAnimationFrame(detect);
+      return;
+    }
+
+    // ── Valid detection — check frequency bounds ─────────────────────────────
+    if (rawFrequency < cfg.MIN_FREQUENCY || rawFrequency > cfg.MAX_FREQUENCY) {
+      animationFrameId = requestAnimationFrame(detect);
+      return;
+    }
+
+    // ── Smooth the frequency ───────────────────────────────────────────────
+    const avgFrequency = pushAndAverage(freqHistory, rawFrequency, FREQ_SMOOTH_FRAMES);
+    const detectedMidi = frequencyToMidi(avgFrequency);
+
+    // ── If same note as confirmed, keep counting ─────────────────────────────
+    if (detectedMidi === confirmedMidiNote) {
+      confirmCount++;
+      releaseCount = 0; // Reset release counter
     } else {
-      // No confident pitch — emit noteOff for the active note
-      if (currentMidiNote !== null) {
-        emitNoteOff(midiToPitch(currentMidiNote), currentMidiNote, 'mic');
-        currentMidiNote = null;
+      // Different note detected
+      if (detectedMidi === lastEmittedMidiNote) {
+        // Same as last emitted — this is a re-detection after dropout
+        // Treat as confirmation of the held note
+        confirmCount++;
+        releaseCount = 0;
+        confirmedMidiNote = detectedMidi;
+      } else {
+        // New, different note
+        confirmCount = 1;
+        releaseCount = 0;
       }
+    }
+
+    // ── Confirm new note after N consecutive detections ────────────────────
+    if (confirmedMidiNote === null && confirmCount >= DETECTION_FRAMES) {
+      // Transitioning to a new note
+
+      // Debounce between different notes
+      if (lastEmittedMidiNote !== null &&
+          lastEmittedMidiNote !== detectedMidi &&
+          now - lastEmittedTime < INTER_NOTE_DEBOUNCE_MS) {
+        // Too soon after last note — skip this detection
+        animationFrameId = requestAnimationFrame(detect);
+        return;
+      }
+
+      confirmedMidiNote = detectedMidi;
+
+      // Velocity from RMS amplitude, scaled to 0-127
+      const velocity = Math.min(127, Math.round(avgRms * RMS_VELOCITY_SCALE)) || 80;
+
+      emitNoteOn(midiToPitch(detectedMidi), detectedMidi, velocity, 'mic', avgClarity);
+      lastEmittedMidiNote = detectedMidi;
+      lastEmittedTime = now;
+
+    } else if (confirmedMidiNote !== null &&
+               confirmedMidiNote !== detectedMidi &&
+               confirmCount >= DETECTION_FRAMES) {
+      // Transitioning between two different notes
+
+      if (lastEmittedMidiNote !== null &&
+          lastEmittedMidiNote !== detectedMidi &&
+          now - lastEmittedTime < INTER_NOTE_DEBOUNCE_MS) {
+        animationFrameId = requestAnimationFrame(detect);
+        return;
+      }
+
+      // Emit noteOff for the old note and noteOn for the new one
+      emitNoteOff(midiToPitch(confirmedMidiNote), confirmedMidiNote, 'mic');
+      emitNoteOn(midiToPitch(detectedMidi), detectedMidi, Math.min(127, Math.round(avgRms * RMS_VELOCITY_SCALE)) || 80, 'mic', avgClarity);
+      lastEmittedMidiNote = detectedMidi;
+      lastEmittedTime = now;
+      confirmedMidiNote = detectedMidi;
     }
 
     animationFrameId = requestAnimationFrame(detect);
@@ -127,28 +238,31 @@ function computeRms(buffer: Float32Array): number {
   return Math.sqrt(sum / buffer.length);
 }
 
-// ─── Teardown ─────────────────────────────────────────────────────────────────
+// ─── Teardown ────────────────────────────────────────────────────────────────
 export function destroyMic(): void {
   if (animationFrameId !== null) {
     cancelAnimationFrame(animationFrameId);
     animationFrameId = null;
   }
 
-  if (currentMidiNote !== null) {
-    emitNoteOff(midiToPitch(currentMidiNote), currentMidiNote, 'mic');
-    currentMidiNote = null;
+  if (confirmedMidiNote !== null) {
+    emitNoteOff(midiToPitch(confirmedMidiNote), confirmedMidiNote, 'mic');
+    confirmedMidiNote = null;
   }
 
   audioContext?.close();
   audioContext = null;
   analyser = null;
-
-  // Stop all tracks so the browser mic indicator goes away
   mediaStream?.getTracks().forEach((t) => t.stop());
   mediaStream = null;
-
   pitchDetector = null;
-  lastNoteTime.clear();
+  freqHistory = [];
+  clarityHistory = [];
+  rmsHistory = [];
+  confirmCount = 0;
+  releaseCount = 0;
+  lastEmittedMidiNote = null;
+  lastEmittedTime = 0;
 }
 
 export function isMicActive(): boolean {
