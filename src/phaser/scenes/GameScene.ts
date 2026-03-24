@@ -51,6 +51,7 @@ export class GameScene extends Phaser.Scene {
   private boundPause: (() => void) | null = null;
   private boundResume: (() => void) | null = null;
   private boundGameEnd: (() => void) | null = null;
+  private boundSpeedChange: ((data: unknown) => void) | null = null;
 
   constructor() {
     super({ key: 'Game' });
@@ -64,7 +65,10 @@ export class GameScene extends Phaser.Scene {
     if (data.timingPreset) {
       gameState.set('timingPreset', data.timingPreset);
       const baseWindow = TIMING.PRESETS[data.timingPreset].window;
-      gameState.set('timingWindowMs', baseWindow);
+      // PRD §6.1: timing window scales proportionally with speed
+      // e.g. 500ms at 50% speed = 250ms effective window
+      const effectiveWindow = baseWindow / (data.speed ?? 1.0);
+      gameState.set('timingWindowMs', effectiveWindow);
     }
     if (data.songData) {
       this.songData = data.songData;
@@ -135,11 +139,13 @@ export class GameScene extends Phaser.Scene {
     this.boundPause = () => this.handlePause();
     this.boundResume = () => this.handleResume();
     this.boundGameEnd = () => this.handleGameEnd();
+    this.boundSpeedChange = (data: unknown) => this.handleSpeedChange(data as { speed: number });
 
     eventBus.on(Events.NOTE_PLAYED, this.boundNotePlayed);
     eventBus.on(Events.GAME_PAUSE, this.boundPause);
     eventBus.on(Events.GAME_RESUME, this.boundResume);
     eventBus.on(Events.GAME_END, this.boundGameEnd);
+    eventBus.on(Events.PRACTICE_SPEED_CHANGE, this.boundSpeedChange);
 
     gameState.set('isPlaying', true);
     gameState.set('phase', 'GAMEPLAY');
@@ -286,6 +292,7 @@ export class GameScene extends Phaser.Scene {
       const newScore = gameState.get('score') + points;
       gameState.set('score', newScore);
       gameState.set('streak', newStreakState.count);
+      gameState.set('maxStreak', newStreakState.maxStreak); // Bug 3 fix: sync maxStreak so ResultsScene reads correctly
       gameState.set('notesHit', gameState.get('notesHit') + 1);
 
       closestNote.showHitFeedback(result.grade);
@@ -337,6 +344,15 @@ export class GameScene extends Phaser.Scene {
     this.scene.start('Boot');
   }
 
+  private handleSpeedChange(data: { speed: number }): void {
+    // PRD §6.1: when speed changes mid-session, recalculate effective timing window
+    const preset = gameState.get('timingPreset');
+    const baseWindow = TIMING.PRESETS[preset].window;
+    const effectiveWindow = baseWindow / data.speed;
+    gameState.set('speed', data.speed);
+    gameState.set('timingWindowMs', effectiveWindow);
+  }
+
   private handlePause(): void {
     gameState.set('isPaused', true);
     this.pauseOverlay?.show();
@@ -357,6 +373,7 @@ export class GameScene extends Phaser.Scene {
     if (this.boundPause) eventBus.off(Events.GAME_PAUSE, this.boundPause);
     if (this.boundResume) eventBus.off(Events.GAME_RESUME, this.boundResume);
     if (this.boundGameEnd) eventBus.off(Events.GAME_END, this.boundGameEnd);
+    if (this.boundSpeedChange) eventBus.off(Events.PRACTICE_SPEED_CHANGE, this.boundSpeedChange);
 
     // Remove keyboard keys from Phaser's input manager
     if (this.escKey) this.input.keyboard?.removeKey(this.escKey);
@@ -387,6 +404,7 @@ export class GameScene extends Phaser.Scene {
     this.aKey = null;
     this.bKey = null;
     this.boundGameEnd = null;
+    this.boundSpeedChange = null;
     this.scoreText = null;
     gameState.set('isPlaying', false);
   }
