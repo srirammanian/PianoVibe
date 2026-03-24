@@ -53,6 +53,20 @@ export class NoteSpawner {
     return [...this.activeNotes];
   }
 
+  /**
+   * Reset the scheduler's consumed-note set so that all notes at or after
+   * loopStartSec can be replayed.  Notes currently on screen are already
+   * falling; they will be displaced on the next update tick once the game
+   * clock jumps back.  This is acceptable for the A-B practice loop flow.
+   */
+  resetLoop(loopStartSec: number): void {
+    void loopStartSec; // loopStart is used by the caller to reposition gameClock
+    this.scheduler.reset();
+    // Destroy any notes currently in flight so the replayed section spawns cleanly
+    this.activeNotes.forEach(n => { if (n.active) n.destroy(); });
+    this.activeNotes = [];
+  }
+
   destroy(): void {
     this.activeNotes.forEach(n => { if (n.active) n.destroy(); });
     this.activeNotes = [];

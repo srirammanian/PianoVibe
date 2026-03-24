@@ -47,3 +47,6 @@
 {"type":"workflow_updated","workflowId":"sdwv2-mn45adap-xiz6","data":{"phase":"building","iteration":3,"status":"running","lastCheckpoint":"cp2-pure-logic-complete"},"timestamp":1774331145345}
 {"type":"activity","workflowId":"sdwv2-mn45adap-xiz6","data":{"source":"orchestrator","message":"Iteration 3 (Plan Iteration 4): Spawning builder for Phaser integration — scenes, FallingNote, game loop, NoteSpawner Phaser wrapper"},"timestamp":1774331145346}
 {"type":"worker_updated","workflowId":"sdwv2-mn45adap-xiz6","data":{"role":"builder","status":"running","currentTask":"Iteration 4: Phaser config, scenes (Boot/Preloader/Game/Results), FallingNote, NoteSpawner Phaser wrapper"},"timestamp":1774331145347}
+{"type":"worker_updated","workflowId":"sdwv2-mn45adap-xiz6","data":{"role":"builder","status":"running","checkpoint":"cp3-phaser-integration","currentTask":"Iteration 5: FeedbackText, ParticleManager, StreakCounter, ComboDisplay, PauseOverlay, ABLoopController, React shell"},"timestamp":1774331693730}
+{"type":"workflow_updated","workflowId":"sdwv2-mn45adap-xiz6","data":{"iteration":4},"timestamp":1774331693732}
+{"type":"activity","workflowId":"sdwv2-mn45adap-xiz6","data":{"source":"orchestrator","message":"Iteration 4: Builder implementing visual feedback, practice tools, UI elements, A-B loop controller"},"timestamp":1774331693733}
