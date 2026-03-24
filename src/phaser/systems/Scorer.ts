@@ -3,7 +3,7 @@
 // ZERO Phaser imports — pure business logic, fully testable in Node.
 
 import { SCORING, TIMING, XP } from '../../core/Constants'
-import type { TimingGrade, SongGrade, GameMode } from '../../core/types'
+import type { TimingGrade, SongGrade, GameMode, TimingPreset } from '../../core/types'
 
 export class Scorer {
   /**
@@ -12,25 +12,25 @@ export class Scorer {
    * @param streakMultiplier - Current streak multiplier (1x, 2x, 3x, 4x)
    * @param isEarly          - Whether this was an early hit (standard mode only: 25% penalty)
    * @param isLate           - Whether this was a late hit past 75% window (hard mode only)
-   * @param mode             - GameMode
+   * @param timingPreset     - TimingPreset (hard/standard/beginner — drives late/early penalties)
    */
   calculatePoints(
     grade: TimingGrade,
     streakMultiplier: number,
     isEarly: boolean,
     isLate: boolean,
-    mode: GameMode,
+    timingPreset: TimingPreset,
   ): number {
     if (grade === 'Miss' || grade === 'Wrong') return 0;
 
     // Hard mode late penalty: flat Base×0.5 formula (no grade multiplier, PRD §5.1)
-    if (mode === 'hard' && isLate) {
+    if (timingPreset === 'hard' && isLate) {
       return Math.round(SCORING.BASE_POINTS * 0.5 * streakMultiplier);
     }
 
     const gradeMultiplier = SCORING.GRADE_MULTIPLIERS[grade];
     // Early penalty is standard-mode only (hard mode doesn't grant late-early credit)
-    const earlyPenalty = (mode === 'standard' && isEarly) ? TIMING.EARLY_PENALTY_MULTIPLIER : 1.0;
+    const earlyPenalty = (timingPreset === 'standard' && isEarly) ? TIMING.EARLY_PENALTY_MULTIPLIER : 1.0;
 
     return Math.round(
       SCORING.BASE_POINTS * gradeMultiplier * streakMultiplier * earlyPenalty,

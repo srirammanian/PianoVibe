@@ -12,35 +12,35 @@ describe('Scorer', () => {
 
   describe('calculatePoints', () => {
     it('Perfect + streak 1x = 100 points', () => {
-      expect(scorer.calculatePoints('Perfect', 1, false, false, 'performance')).toBe(100)
+      expect(scorer.calculatePoints('Perfect', 1, false, false, 'beginner')).toBe(100)
     })
 
     it('Good + streak 1x = 75 points', () => {
-      expect(scorer.calculatePoints('Good', 1, false, false, 'performance')).toBe(75)
+      expect(scorer.calculatePoints('Good', 1, false, false, 'beginner')).toBe(75)
     })
 
     it('OK + streak 1x = 50 points', () => {
-      expect(scorer.calculatePoints('OK', 1, false, false, 'performance')).toBe(50)
+      expect(scorer.calculatePoints('OK', 1, false, false, 'beginner')).toBe(50)
     })
 
     it('Perfect + streak 2x = 200 points', () => {
-      expect(scorer.calculatePoints('Perfect', 2, false, false, 'performance')).toBe(200)
+      expect(scorer.calculatePoints('Perfect', 2, false, false, 'beginner')).toBe(200)
     })
 
     it('Perfect + streak 3x = 300 points', () => {
-      expect(scorer.calculatePoints('Perfect', 3, false, false, 'performance')).toBe(300)
+      expect(scorer.calculatePoints('Perfect', 3, false, false, 'beginner')).toBe(300)
     })
 
     it('Perfect + streak 4x = 400 points', () => {
-      expect(scorer.calculatePoints('Perfect', 4, false, false, 'performance')).toBe(400)
+      expect(scorer.calculatePoints('Perfect', 4, false, false, 'beginner')).toBe(400)
     })
 
     it('Good + streak 2x = 150 points', () => {
-      expect(scorer.calculatePoints('Good', 2, false, false, 'performance')).toBe(150)
+      expect(scorer.calculatePoints('Good', 2, false, false, 'beginner')).toBe(150)
     })
 
     it('OK + streak 4x = 200 points', () => {
-      expect(scorer.calculatePoints('OK', 4, false, false, 'performance')).toBe(200)
+      expect(scorer.calculatePoints('OK', 4, false, false, 'beginner')).toBe(200)
     })
 
     // Early penalty is standard-mode only
@@ -59,23 +59,23 @@ describe('Scorer', () => {
     })
 
     it('Perfect + isEarly + performance mode = 100 points (early penalty is standard-only)', () => {
-      expect(scorer.calculatePoints('Perfect', 1, true, false, 'performance')).toBe(100)
+      expect(scorer.calculatePoints('Perfect', 1, true, false, 'beginner')).toBe(100)
     })
 
     it('Miss = 0 points', () => {
-      expect(scorer.calculatePoints('Miss', 1, false, false, 'performance')).toBe(0)
+      expect(scorer.calculatePoints('Miss', 1, false, false, 'beginner')).toBe(0)
     })
 
     it('Wrong = 0 points', () => {
-      expect(scorer.calculatePoints('Wrong', 1, false, false, 'performance')).toBe(0)
+      expect(scorer.calculatePoints('Wrong', 1, false, false, 'beginner')).toBe(0)
     })
 
     it('Miss with any streak still = 0', () => {
-      expect(scorer.calculatePoints('Miss', 4, false, false, 'performance')).toBe(0)
+      expect(scorer.calculatePoints('Miss', 4, false, false, 'beginner')).toBe(0)
     })
 
     it('Wrong with early flag still = 0', () => {
-      expect(scorer.calculatePoints('Wrong', 4, true, false, 'performance')).toBe(0)
+      expect(scorer.calculatePoints('Wrong', 4, true, false, 'beginner')).toBe(0)
     })
 
     // ─── Hard mode late penalty ──────────────────────────────────────────────
