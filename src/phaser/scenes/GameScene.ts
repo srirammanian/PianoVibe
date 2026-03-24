@@ -10,9 +10,11 @@ import { ABLoopController } from '../systems/ABLoopController';
 import { ParticleManager } from '../systems/ParticleManager';
 import { FeedbackText } from '../objects/FeedbackText';
 import { PlayLine } from '../objects/PlayLine';
+import { PianoKeyboard } from '../objects/PianoKeyboard';
 import { StreakCounter } from '../ui/StreakCounter';
 import { ComboDisplay } from '../ui/ComboDisplay';
 import { PauseOverlay } from '../ui/PauseOverlay';
+import { inputBridge, setActiveSource } from '../../input/InputBridge';
 import type { GameStartData, InputEvent, GameReadyNote } from '../../core/types';
 
 export class GameScene extends Phaser.Scene {
@@ -34,6 +36,10 @@ export class GameScene extends Phaser.Scene {
 
   // Practice tools
   private abLoop: ABLoopController | null = null;
+
+  // Input
+  private pianoKeyboard: PianoKeyboard | null = null;
+  private boundInputNoteOn: ((event: InputEvent) => void) | null = null;
 
   // Keyboard keys
   private escKey: Phaser.Input.Keyboard.Key | null = null;
@@ -146,6 +152,20 @@ export class GameScene extends Phaser.Scene {
     eventBus.on(Events.GAME_RESUME, this.boundResume);
     eventBus.on(Events.GAME_END, this.boundGameEnd);
     eventBus.on(Events.PRACTICE_SPEED_CHANGE, this.boundSpeedChange);
+
+    // ── On-screen piano keyboard (touch / mouse input) ────────────────────
+    setActiveSource('touch');
+    this.pianoKeyboard = new PianoKeyboard(this, 48, 3); // C3–B5
+    const kbWidth = this.pianoKeyboard.getTotalWidth();
+    const kbX = (GAME.WIDTH - kbWidth) / 2; // centre horizontally
+    this.pianoKeyboard.setPosition(kbX, GAME.HEIGHT - PianoKeyboard.HEIGHT);
+
+    // ── Bridge: inputBridge → eventBus (game engine) ──────────────────────
+    this.boundInputNoteOn = (event: InputEvent) => {
+      // Forward the normalised InputEvent into the existing hit-detection pipeline
+      eventBus.emit(Events.NOTE_PLAYED, event);
+    };
+    inputBridge.on('noteOn', this.boundInputNoteOn);
 
     gameState.set('isPlaying', true);
     gameState.set('phase', 'GAMEPLAY');
@@ -368,6 +388,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   shutdown(): void {
+    // Remove inputBridge listener
+    if (this.boundInputNoteOn) inputBridge.off('noteOn', this.boundInputNoteOn);
+    this.pianoKeyboard?.destroy();
+    this.pianoKeyboard = null;
+    this.boundInputNoteOn = null;
+
     // Remove all EventBus listeners
     if (this.boundNotePlayed) eventBus.off(Events.NOTE_PLAYED, this.boundNotePlayed);
     if (this.boundPause) eventBus.off(Events.GAME_PAUSE, this.boundPause);
