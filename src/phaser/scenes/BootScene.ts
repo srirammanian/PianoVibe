@@ -14,26 +14,65 @@ export class BootScene extends Phaser.Scene {
       this.scene.start('Preloader', data as GameStartData);
     });
 
-    // ── Mic Debug shortcut ────────────────────────────────────────────────────
-    // Visible while the Boot scene is waiting for a React GAME_START event.
-    // Clicking launches the standalone mic visualiser without starting a song.
-    const micDebugBtn = this.add
-      .text(GAME.WIDTH / 2, 350, '🎤  Mic Debug Mode', {
-        fontSize: '24px',
-        color: '#3498DB',
-        backgroundColor: '#161B22',
-        padding: { x: 30, y: 15 },
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
+    // ── Dark background ────────────────────────────────────────────────────
+    this.add.rectangle(GAME.WIDTH / 2, GAME.HEIGHT / 2, GAME.WIDTH, GAME.HEIGHT, GAME.BACKGROUND_COLOR);
 
-    micDebugBtn.on('pointerover',  () => micDebugBtn.setColor('#5DADE2'));
-    micDebugBtn.on('pointerout',   () => micDebugBtn.setColor('#3498DB'));
-    micDebugBtn.on('pointerdown',  () => {
-      // Remove any pending GAME_START listener before leaving so it doesn't
-      // fire stale when we return from MicDebug and Boot re-creates.
-      eventBus.clear(Events.GAME_START);
-      this.scene.start('MicDebug');
+    // ── Title ─────────────────────────────────────────────────────────
+    this.add.text(GAME.WIDTH / 2, 60, '🎹 PianoVibe', {
+      fontSize: '48px',
+      color: '#ffffff',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    this.add.text(GAME.WIDTH / 2, 105, 'Learn piano. Play games.', {
+      fontSize: '18px',
+      color: '#8B949E',
+    }).setOrigin(0.5);
+
+    // ── Menu buttons ────────────────────────────────────────────────────
+    const centerX = GAME.WIDTH / 2;
+    const btnW = 300;
+    const btnH = 60;
+    const btnSpacing = 80;
+
+    const buttons: { label: string; y: number; key: string; color: string }[] = [
+      { label: '🎮  Play Game', y: 240, key: 'Preloader', color: '#E74C3C' },
+      { label: '🎤  Mic Debug (free play)', y: 320, key: 'MicDebug', color: '#3498DB' },
+      { label: '🎵  Mic Debug — Song Mode', y: 400, key: 'MicDebugSong', color: '#2ECC71' },
+      { label: '⚙️  Settings', y: 480, key: 'Boot', color: '#8B949E' },
+    ];
+
+    for (const btn of buttons) {
+      const rect = this.add.rectangle(centerX, btn.y, btnW, btnH, 0x161B22, 0.8);
+      rect.setStrokeStyle(1, 0x30363D);
+      rect.setInteractive({ useHandCursor: true });
+
+      const text = this.add.text(centerX, btn.y, btn.label, {
+        fontSize: '22px',
+        color: btn.color,
+        fontStyle: 'bold',
+      }).setOrigin(0.5);
+
+      rect.on('pointerover', () => {
+        rect.setFillStyle(0x1f2937, 0.9);
+        rect.setStrokeStyle(1, btn.color);
+        text.setColor('#ffffff');
+      });
+      rect.on('pointerout', () => {
+        rect.setFillStyle(0x161B22, 0.8);
+        rect.setStrokeStyle(1, 0x30363D);
+        text.setColor(btn.color);
+      });
+      rect.on('pointerdown', () => {
+        eventBus.clear(Events.GAME_START);
+        this.scene.start(btn.key);
+      });
+    }
+
+    // ── Version ───────────────────────────────────────────────────────
+    this.add.text(20, GAME.HEIGHT - 20, 'v0.1.0', {
+      fontSize: '12px',
+      color: '#30363D',
     });
   }
 }

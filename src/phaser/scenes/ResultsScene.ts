@@ -78,7 +78,8 @@ export class ResultsScene extends Phaser.Scene {
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
     menuBtn.on('pointerdown', () => {
-      eventBus.emit(Events.GAME_END, {});
+      // Navigate directly — don't rely on React to handle GAME_END
+      this.scene.start('Boot');
     });
 
     // Play Again button
@@ -88,7 +89,8 @@ export class ResultsScene extends Phaser.Scene {
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
     playBtn.on('pointerdown', () => {
-      eventBus.emit(Events.GAME_RESTART, {});
+      // Restart the game with same song data
+      this.scene.start('Preloader');
     });
   }
 }

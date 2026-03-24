@@ -360,7 +360,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleGameEnd(): void {
-    // Navigate back to Boot scene (re-runs create(), re-registers GAME_START listener)
+    // Navigate directly to Boot scene — don't rely on React
     this.scene.start('Boot');
   }
 
